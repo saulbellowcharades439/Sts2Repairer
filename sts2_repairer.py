@@ -533,7 +533,22 @@ def fix_darv(path: Path, context: RepairContext) -> bool:
         return False
 
     def transform(text: str) -> str:
+        inline_init = re.search(
+            r"private static readonly List<ValidRelicSet> _validRelicSets = new List<ValidRelicSet>\s*\{(?P<body>.*?)^\t\};",
+            text,
+            flags=re.DOTALL | re.MULTILINE,
+        )
+        if inline_init:
+            replacement = "private static List<ValidRelicSet>? _validRelicSets;\n\n\tprivate static IReadOnlyList<ValidRelicSet> ValidRelicSets => _validRelicSets ??= CreateValidRelicSets();"
+            body = inline_init.group("body").rstrip()
+            text = text[:inline_init.start()] + replacement + text[inline_init.end():]
+            if "private static List<ValidRelicSet> CreateValidRelicSets()" not in text:
+                method = "\n\tprivate static List<ValidRelicSet> CreateValidRelicSets()\n\t{\n\t\treturn new List<ValidRelicSet>\n\t\t{" + body + "\n\t\t};\n\t}\n"
+                text = re.sub(r"\n\}$", method + "}", text, count=1)
+
         text = text.replace("private static readonly List<ValidRelicSet> _validRelicSets;", "private static List<ValidRelicSet>? _validRelicSets;\n\n\tprivate static IReadOnlyList<ValidRelicSet> ValidRelicSets => _validRelicSets ??= CreateValidRelicSets();")
+        if "private static List<ValidRelicSet>? _validRelicSets;" in text and "private static IReadOnlyList<ValidRelicSet> ValidRelicSets => _validRelicSets ??= CreateValidRelicSets();" not in text:
+            text = text.replace("private static List<ValidRelicSet>? _validRelicSets;", "private static List<ValidRelicSet>? _validRelicSets;\n\n\tprivate static IReadOnlyList<ValidRelicSet> ValidRelicSets => _validRelicSets ??= CreateValidRelicSets();")
         text = text.replace("from r in _validRelicSets.SelectMany", "from r in ValidRelicSets.SelectMany")
         text = text.replace("from rs in _validRelicSets", "from rs in ValidRelicSets")
         match = re.search(r"static Darv\(\)\s*\{(?P<body>.*?)^\t\}", text, flags=re.DOTALL | re.MULTILINE)
